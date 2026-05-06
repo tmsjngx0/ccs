@@ -129,6 +129,12 @@ def derive_title(first_user_msg: str) -> str:
 @dataclass
 class SessionMeta:
     tool: str
+    # Opaque session identifier. JSONL adapters (Claude/Codex/Pi) put a
+    # filesystem path here; OpencodeAdapter uses `opencode://<session_id>`.
+    # Every consumer (preview, --session direct-open, copy paths) treats
+    # this as opaque and round-trips it back to the owning Adapter for
+    # parsing. Do NOT generalize to Path or (scheme, value) — that breaks
+    # Opencode and adds boilerplate.
     locator: str
     session_id: str
     session_id_full: str
@@ -324,6 +330,18 @@ def render_generic(label: str, ts: str, raw: dict) -> str:
 
 # ===========================================================================
 # Adapters
+#
+# The four concrete Adapter classes below (ClaudeAdapter, CodexAdapter,
+# PiAdapter, OpencodeAdapter) are vendored — copied with attribution —
+# from `~/.agents/skills/recall/scripts/recall-day.py` (the `recall` skill
+# in the agent-skills repo). They are NOT imported at runtime: the skill's
+# on-disk path is a deployment artifact ccs cannot depend on, and ccs's
+# stdlib-only / single-file-drop-in promise rules out adding sys.path
+# tricks or pip dependencies.
+#
+# Re-vendoring is manual. When the upstream class gains capability worth
+# pulling in (new tool adapter, schema fix), diff and port by hand. Drift
+# is acceptable; bidirectional sync is not.
 # ===========================================================================
 
 
@@ -1253,7 +1271,21 @@ def discover_all(sources: list[str], *, cwd_filter: str | None,
 
 
 def session_line(meta: SessionMeta) -> str:
-    """Tab-delimited row. Hidden cols 1..3 used for dispatch; visible cols start at 4."""
+    """Tab-delimited row. Hidden cols 1..3 used for dispatch; visible cols start at 4.
+
+    fzf is launched with `--with-nth 4..` so cols 1..3 (tool / locator /
+    session_id_full) never render in the picker, but the full 9-column row
+    is what fzf returns on selection. `_self_invoke()` re-enters this
+    script as a fresh process for `--preview-session` / `--preview-message`
+    / `--copy-session` / `--copy-message` / `--help-keys`, parsing the
+    hidden cols out of the selected row to know which Adapter and locator
+    to address.
+
+    If you change the column layout, update both this function AND the
+    `--with-nth` value in browse_sessions(), AND verify the {1}/{2}
+    placeholders in the preview/copy commands still point at the right
+    field. Three places must stay aligned.
+    """
     ts = fmt_ts(meta.start_time)
     return "\t".join([
         meta.tool,                        # 1 hidden

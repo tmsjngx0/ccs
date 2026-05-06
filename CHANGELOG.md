@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- README expanded with a "Known limitations" section (preview re-parse cost, Codex prefix-match asymmetry, system-entry visibility) so users don't file them as bugs
+- Adapter section header in `ccs.py` carries an attribution + re-vendoring note documenting the source skill (`recall`) and the no-import rationale
+- `SessionMeta.locator` and `session_line()` carry inline documentation of the opaque-string contract and the hidden-column dispatch pattern
+
+### Removed
+
+- `CLAUDE.md` — agentic guidance moved upstream to the `ccs-mgmt` harness per its ADR-007 (submodules carry only user-facing docs). Architectural decisions previously narrated here are now captured as harness ADRs (vendoring, fzf-not-index, 2-tier UX); user-relevant content was absorbed into `README.md`
+
 ## [0.2.0] - 2026-05-03
 
 First standalone release. `ccs` originated in the [qs](https://github.com/tmsjngx0/qs) repo and was extracted into this dedicated repo at this version. The version starts at 0.2.0 (not 0.1.0) because the work captured here corresponds to qs's `[Unreleased]` block plus subsequent ccs polish — qs `[0.1.0]` was the initial release of the `qs` Bash tool, never a `ccs` release. Use `git log --follow ccs.py` to see the file's full history dating back to the multi-source feat commit.

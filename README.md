@@ -116,6 +116,16 @@ Adapters auto-skip when their storage doesn't exist on the machine. Pi `imported
 | `PI_SESSIONS_DIR`      | `~/.pi/agent/sessions`                                   |
 | `OPENCODE_DB`          | `~/.local/share/opencode/opencode.db`                    |
 
+Each adapter checks its storage path at startup and silently skips when the path is missing — no flags, no config files. Install one of the four tools and ccs picks it up; uninstall and ccs stops listing it.
+
+## Known limitations
+
+These are intentional trade-offs documented so you don't file them as bugs:
+
+- **Preview re-parses the full session JSONL on every fzf highlight.** Acceptable for typical session sizes; an LRU cache or sidecar message-index would be a real refactor, not a quick patch.
+- **Codex sessions match cwd by prefix; Claude / Pi / Opencode match exactly.** Documented asymmetry inherited from the upstream `recall` adapter — Codex stores rollouts under date directories rather than per-cwd.
+- **System entries appear in the message list.** `attachment`, `permission-mode`, `file-history-snapshot` and similar are visible alongside user/assistant turns. Filter via fzf substring (`user` / `assistant`) when you want only conversational content. A `--user-only` flag would be a feature, not a bug fix.
+
 ## Notes
 
 Adapter classes are vendored from the [`recall`](https://github.com/tmsjngx0/agent-skills) skill so `ccs` has no runtime dependency on that skill's deploy location. Upstream changes can be re-vendored as needed.
