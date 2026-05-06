@@ -911,19 +911,29 @@ def shutil_which(command: str) -> str | None:
 
 
 # Clipboard fallback chain. Each entry is (cmd, gate) — `cmd` is the
-# subprocess argv, `gate` is a predicate that returns False when the tool's
-# required environment is absent. Without the gate, xclip/xsel get found in
-# PATH on SSH boxes and then hang or error because $DISPLAY isn't set; the
-# gate makes us deterministically fall through to OSC 52 instead.
+# subprocess argv, `gate` is a predicate that returns False when the tool
+# would write to the wrong machine's clipboard (or hang/error). Without the
+# gate, xclip/xsel get found in PATH on SSH boxes and then hang because
+# $DISPLAY isn't set; pbcopy on an SSH'd Mac sets the *remote* Mac's
+# clipboard, not the user's terminal. The gate makes us deterministically
+# fall through to OSC 52 instead.
+#
+# Gate rationale per tool:
+#   - pbcopy / clip.exe: no env-based "is this the right machine" signal,
+#     so we explicitly skip them inside SSH sessions ($SSH_CONNECTION set).
+#   - wl-copy: $WAYLAND_DISPLAY is naturally absent on plain SSH (Wayland
+#     sockets don't forward), so the env check covers the SSH case.
+#   - xclip / xsel: $DISPLAY is set inside `ssh -X` sessions, which is the
+#     user's explicit opt-in to X11 clipboard forwarding — honor that.
 #
 # Order: pbcopy (mac) → wl-copy (Wayland) → xclip / xsel (X11) → clip.exe
 # (WSL). First one whose gate passes AND that exists in PATH wins.
 _CLIPBOARD_CMDS: tuple[tuple[list[str], "callable"], ...] = (
-    (["pbcopy"], lambda: True),
+    (["pbcopy"], lambda: not os.environ.get("SSH_CONNECTION")),
     (["wl-copy"], lambda: bool(os.environ.get("WAYLAND_DISPLAY"))),
     (["xclip", "-selection", "clipboard"], lambda: bool(os.environ.get("DISPLAY"))),
     (["xsel", "--clipboard", "--input"], lambda: bool(os.environ.get("DISPLAY"))),
-    (["clip.exe"], lambda: True),
+    (["clip.exe"], lambda: not os.environ.get("SSH_CONNECTION")),
 )
 
 # OSC 52 escape sequence: \x1b]52;c;<base64>\x07 asks the terminal emulator
