@@ -17,6 +17,7 @@ CODEX_HOME, PI_SESSIONS_DIR, OPENCODE_DB.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -891,37 +892,156 @@ def shutil_which(command: str) -> str | None:
     return shutil.which(command)
 
 
-# Clipboard fallback chain mirrors qs: pbcopy (mac) → wl-copy (Wayland) →
-# xclip / xsel (X11) → clip.exe (WSL). First one found wins.
-_CLIPBOARD_CMDS: tuple[list[str], ...] = (
-    ["pbcopy"],
-    ["wl-copy"],
-    ["xclip", "-selection", "clipboard"],
-    ["xsel", "--clipboard", "--input"],
-    ["clip.exe"],
+# Clipboard fallback chain. Each entry is (cmd, gate) — `cmd` is the
+# subprocess argv, `gate` is a predicate that returns False when the tool's
+# required environment is absent. Without the gate, xclip/xsel get found in
+# PATH on SSH boxes and then hang or error because $DISPLAY isn't set; the
+# gate makes us deterministically fall through to OSC 52 instead.
+#
+# Order: pbcopy (mac) → wl-copy (Wayland) → xclip / xsel (X11) → clip.exe
+# (WSL). First one whose gate passes AND that exists in PATH wins.
+_CLIPBOARD_CMDS: tuple[tuple[list[str], "callable"], ...] = (
+    (["pbcopy"], lambda: True),
+    (["wl-copy"], lambda: bool(os.environ.get("WAYLAND_DISPLAY"))),
+    (["xclip", "-selection", "clipboard"], lambda: bool(os.environ.get("DISPLAY"))),
+    (["xsel", "--clipboard", "--input"], lambda: bool(os.environ.get("DISPLAY"))),
+    (["clip.exe"], lambda: True),
 )
+
+# OSC 52 escape sequence: \x1b]52;c;<base64>\x07 asks the terminal emulator
+# to set the system clipboard. Works over plain ssh — the sequence travels
+# through the SSH channel and is interpreted by whatever terminal is on the
+# user's local machine (kitty, WezTerm, iTerm2, Windows Terminal, foot,
+# Alacritty, Zellij/tmux passthrough). No X/Wayland forwarding needed.
+#
+# Caveats: (a) no acknowledgement, so success is unverifiable from sender;
+# (b) tmux silently eats the sequence unless `set -g allow-passthrough on`;
+# (c) terminals truncate beyond their internal cap. 74000 is the
+# conservative ceiling that "just works" on every reasonably modern
+# terminal — beyond that, skip OSC 52 and lean on the tempfile backstop.
+_OSC52_SIZE_LIMIT = 74_000
+
+
+def _osc52_send(text: str) -> tuple[bool, str]:
+    """Emit OSC 52 to /dev/tty. Returns (sent, note) — `sent` only confirms
+    the bytes left this process. The user must verify by pasting on their
+    local machine. Used as a fallback when no local clipboard tool is
+    reachable (typical SSH session)."""
+    if len(text) > _OSC52_SIZE_LIMIT:
+        return (
+            False,
+            f"OSC 52 skipped: body {len(text):,} chars exceeds "
+            f"{_OSC52_SIZE_LIMIT:,}-char ceiling (terminal would truncate)",
+        )
+    payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    seq = f"\x1b]52;c;{payload}\x07"
+    if os.environ.get("TMUX"):
+        # tmux DCS passthrough; requires `set -g allow-passthrough on` (or
+        # `set -g set-clipboard on` on older tmux). If neither is set, tmux
+        # silently eats the sequence — tempfile backstop covers that case.
+        seq = f"\x1bPtmux;\x1b{seq}\x1b\\"
+    try:
+        with open("/dev/tty", "w") as tty:
+            tty.write(seq)
+            tty.flush()
+        return (True, "OSC 52 sent (verify by pasting on your local machine)")
+    except OSError as exc:
+        return (False, f"OSC 52 failed: cannot open /dev/tty ({exc})")
+
+
+def _tempfile_save(text: str) -> str | None:
+    """Write text to /tmp via mkstemp + chmod 0600 as a backstop when OSC 52
+    is best-effort or all paths failed. Returns path or None on failure.
+
+    Lifetime is intentionally ephemeral: the conversation's authoritative
+    copy is in the session JSONL/sqlite, so this artifact only needs to
+    survive long enough for an scp / cat / paste-from-pager. systemd-tmpfiles
+    cleans /tmp on its own schedule (typically 10 days)."""
+    try:
+        fd, path = tempfile.mkstemp(prefix="ccs-copy-", suffix=".md", dir="/tmp")
+        try:
+            os.write(fd, text.encode("utf-8"))
+        finally:
+            os.close(fd)
+        os.chmod(path, 0o600)
+        return path
+    except OSError as exc:
+        print(f"tempfile backstop failed: {exc}", file=sys.stderr)
+        return None
 
 
 def clipboard_copy(text: str) -> bool:
-    for cmd in _CLIPBOARD_CMDS:
-        if shutil_which(cmd[0]):
-            try:
-                subprocess.run(cmd, input=text, text=True, check=True)
-                return True
-            except subprocess.CalledProcessError as exc:
-                print(
-                    f"clipboard copy via {cmd[0]} failed: rc={exc.returncode}. "
-                    f"Tried command: {' '.join(cmd)}",
-                    file=sys.stderr,
-                )
-                return False
-    print(
-        "No clipboard tool found. Tried: "
-        + ", ".join(c[0] for c in _CLIPBOARD_CMDS)
-        + ". Install one of these or set up WSL's clip.exe in PATH.",
-        file=sys.stderr,
-    )
-    return False
+    """Try local clipboard tools first; if none are reachable (typical SSH
+    session), fall through to OSC 52 and always save a tempfile backstop.
+
+    Returns True if at least one path succeeded. Reporting follows the
+    AI-first observability convention (manifesto §12): every path emits a
+    structured note saying what happened, why, and what the user can do.
+
+    Path matrix:
+      - Local tool succeeds → done, single-line success.
+      - Local tools all skipped (gate failed or not in PATH) → OSC 52 +
+        tempfile, with both notes printed so user can fall back to scp if
+        paste fails.
+      - Local tool found but failed → continue to next tool, then OSC 52
+        + tempfile.
+    """
+    notes: list[str] = []
+    primary_ok = False
+
+    for cmd, gate in _CLIPBOARD_CMDS:
+        if not gate():
+            continue
+        if not shutil_which(cmd[0]):
+            continue
+        try:
+            subprocess.run(cmd, input=text, text=True, check=True)
+            notes.append(f"clipboard: {cmd[0]} → ok")
+            primary_ok = True
+            break
+        except subprocess.CalledProcessError as exc:
+            notes.append(
+                f"clipboard: {cmd[0]} failed (rc={exc.returncode}); "
+                "trying next fallback"
+            )
+
+    osc52_ok = False
+    backstop_path: str | None = None
+    if not primary_ok:
+        osc52_ok, osc_note = _osc52_send(text)
+        notes.append(osc_note)
+        backstop_path = _tempfile_save(text)
+        if backstop_path:
+            notes.append(
+                f"backstop: saved to {backstop_path} "
+                f"(scp it down if paste failed: scp <host>:{backstop_path} ./)"
+            )
+
+    for n in notes:
+        print(n, file=sys.stderr)
+
+    if not (primary_ok or osc52_ok or backstop_path):
+        env_hints: list[str] = []
+        if os.environ.get("SSH_CONNECTION"):
+            env_hints.append(
+                "SSH session detected — local clipboard tools cannot reach "
+                "your terminal"
+            )
+        if not os.environ.get("DISPLAY"):
+            env_hints.append("$DISPLAY unset (X11 unavailable)")
+        if not os.environ.get("WAYLAND_DISPLAY"):
+            env_hints.append("$WAYLAND_DISPLAY unset (Wayland unavailable)")
+        print(
+            "❌ All clipboard paths failed. Diagnosis: "
+            + (", ".join(env_hints) if env_hints else "no environment hints")
+            + ". Try: (a) ensure your terminal supports OSC 52, "
+            "(b) for tmux: `set -g allow-passthrough on` in tmux.conf, "
+            "(c) check /tmp is writable.",
+            file=sys.stderr,
+        )
+        return False
+
+    return True
 
 
 _LAST_BANNER: list[str] | None = None
@@ -1230,8 +1350,8 @@ def browse_messages(tool: str, locator: str) -> int:
     # gives non-modal feedback so the user knows it succeeded but stays in the
     # picker with their selection intact.
     bindings = [
-        f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation to clipboard)",
-        f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message to clipboard)",
+        f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — see stderr for path/method)",
+        f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — see stderr for path/method)",
         f"?:execute({help_cmd})",
     ]
     messages_banner = [
@@ -1273,7 +1393,7 @@ def copy_session(tool: str, locator: str) -> int:
         size = len(body)
         print(
             f"✓ Copied {len(records)} messages ({size:,} chars) "
-            f"from {tool} session to clipboard",
+            f"from {tool} session (see notes above for path/method)",
             file=sys.stderr,
         )
         return 0
@@ -1318,6 +1438,19 @@ Clipboard
 ---------
   y          Copy the WHOLE conversation (all messages, joined)
   Y          Copy ONLY the currently highlighted message
+
+  Copy chain (each path tried in order, first success wins):
+    1. Local clipboard tools (pbcopy / wl-copy / xclip / xsel / clip.exe).
+       Skipped automatically when their environment is missing — e.g. xclip
+       is skipped on a plain SSH session because $DISPLAY is unset.
+    2. OSC 52 escape sequence — works over plain ssh into modern terminals
+       (kitty, WezTerm, iTerm2, Windows Terminal, foot, Alacritty, Zellij).
+       For tmux, requires `set -g allow-passthrough on` in tmux.conf.
+       Body capped at ~74KB; larger sessions skip OSC 52.
+    3. Tempfile backstop — written to /tmp/ccs-copy-XXXX.md (mode 0600)
+       whenever OSC 52 is used, since OSC 52 success is unverifiable from
+       the sender side. Path is printed on stderr so you can `scp` it down
+       if paste fails. Lifetime is OS-managed (systemd-tmpfiles).
 
 Other
 -----
@@ -1368,7 +1501,7 @@ def copy_message(tool: str, locator: str, index: int) -> int:
     if clipboard_copy(rec.body):
         print(
             f"✓ Copied message #{rec.index} ({rec.role}, {len(rec.body):,} chars) "
-            f"to clipboard",
+            f"(see notes above for path/method)",
             file=sys.stderr,
         )
         return 0
