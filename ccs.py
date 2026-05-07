@@ -936,45 +936,46 @@ _CLIPBOARD_CMDS: tuple[tuple[list[str], "callable"], ...] = (
     (["clip.exe"], lambda: not os.environ.get("SSH_CONNECTION")),
 )
 
-# OSC 52 escape sequence: \x1b]52;c;<base64>\x07 asks the terminal emulator
+# OSC 52 escape sequence: \x1b]52;c;<base64>\x1b\\ asks the terminal emulator
 # to set the system clipboard. Works over plain ssh — the sequence travels
 # through the SSH channel and is interpreted by whatever terminal is on the
 # user's local machine (kitty, WezTerm, iTerm2, Windows Terminal, foot,
-# Alacritty, Zellij/tmux passthrough). No X/Wayland forwarding needed.
+# Alacritty, Ghostty, Zellij/tmux passthrough). No X/Wayland forwarding needed.
+#
+# Implementation matches neovim's runtime/lua/vim/ui/clipboard/osc52.lua:
+#   - ST terminator (\x1b\\) over BEL (\x07): more compatible across terminals
+#     and SSH paths. BEL fails silently on some setups (verified empirically
+#     against zellij + ssh-into-WSL2; nvim's PR #26688 documents the same).
+#   - Write to sys.stderr rather than /dev/tty: more robust under fzf
+#     execute-silent and similar wrappers that may redirect stdout.
+#   - No size limit: modern terminals handle 1MB+; if a particular terminal
+#     truncates, the tempfile backstop catches the loss.
 #
 # Caveats: (a) no acknowledgement, so success is unverifiable from sender;
-# (b) tmux silently eats the sequence unless `set -g allow-passthrough on`;
-# (c) terminals truncate beyond their internal cap. 74000 is the
-# conservative ceiling that "just works" on every reasonably modern
-# terminal — beyond that, skip OSC 52 and lean on the tempfile backstop.
-_OSC52_SIZE_LIMIT = 74_000
+# (b) tmux silently eats the sequence unless `set -g allow-passthrough on`
+# is in tmux.conf (we wrap with DCS passthrough when $TMUX is detected, but
+# allow-passthrough must still be enabled on the user's side).
 
 
 def _osc52_send(text: str) -> tuple[bool, str]:
-    """Emit OSC 52 to /dev/tty. Returns (sent, note) — `sent` only confirms
+    """Emit OSC 52 to stderr. Returns (sent, note) — `sent` only confirms
     the bytes left this process. The user must verify by pasting on their
     local machine. Used as a fallback when no local clipboard tool is
     reachable (typical SSH session)."""
-    if len(text) > _OSC52_SIZE_LIMIT:
-        return (
-            False,
-            f"OSC 52 skipped: body {len(text):,} chars exceeds "
-            f"{_OSC52_SIZE_LIMIT:,}-char ceiling (terminal would truncate)",
-        )
     payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
-    seq = f"\x1b]52;c;{payload}\x07"
+    seq = f"\x1b]52;c;{payload}\x1b\\"
     if os.environ.get("TMUX"):
-        # tmux DCS passthrough; requires `set -g allow-passthrough on` (or
-        # `set -g set-clipboard on` on older tmux). If neither is set, tmux
-        # silently eats the sequence — tempfile backstop covers that case.
-        seq = f"\x1bPtmux;\x1b{seq}\x1b\\"
+        # tmux DCS passthrough — every ESC inside the inner sequence must be
+        # doubled. Requires `set -g allow-passthrough on` in tmux.conf; if
+        # not set, tmux silently eats the sequence and the tempfile backstop
+        # is the user's recovery path.
+        seq = "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
     try:
-        with open("/dev/tty", "w") as tty:
-            tty.write(seq)
-            tty.flush()
+        sys.stderr.write(seq)
+        sys.stderr.flush()
         return (True, "OSC 52 sent (verify by pasting on your local machine)")
     except OSError as exc:
-        return (False, f"OSC 52 failed: cannot open /dev/tty ({exc})")
+        return (False, f"OSC 52 failed: stderr write error ({exc})")
 
 
 def _tempfile_save(text: str) -> str | None:
@@ -1486,9 +1487,10 @@ Clipboard
        Skipped automatically when their environment is missing — e.g. xclip
        is skipped on a plain SSH session because $DISPLAY is unset.
     2. OSC 52 escape sequence — works over plain ssh into modern terminals
-       (kitty, WezTerm, iTerm2, Windows Terminal, foot, Alacritty, Zellij).
+       (kitty, WezTerm, iTerm2, Windows Terminal, foot, Alacritty, Ghostty,
+       Zellij). Uses ST terminator and stderr channel (matches neovim's
+       implementation, more compatible than BEL+/dev/tty on some setups).
        For tmux, requires `set -g allow-passthrough on` in tmux.conf.
-       Body capped at ~74KB; larger sessions skip OSC 52.
     3. Tempfile backstop — written to /tmp/ccs-copy-XXXX.md (mode 0600)
        whenever OSC 52 is used, since OSC 52 success is unverifiable from
        the sender side. Path is printed on stderr so you can `scp` it down
