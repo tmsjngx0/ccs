@@ -942,12 +942,19 @@ _CLIPBOARD_CMDS: tuple[tuple[list[str], "callable"], ...] = (
 # user's local machine (kitty, WezTerm, iTerm2, Windows Terminal, foot,
 # Alacritty, Ghostty, Zellij/tmux passthrough). No X/Wayland forwarding needed.
 #
-# Implementation matches neovim's runtime/lua/vim/ui/clipboard/osc52.lua:
-#   - ST terminator (\x1b\\) over BEL (\x07): more compatible across terminals
-#     and SSH paths. BEL fails silently on some setups (verified empirically
-#     against zellij + ssh-into-WSL2; nvim's PR #26688 documents the same).
-#   - Write to sys.stderr rather than /dev/tty: more robust under fzf
-#     execute-silent and similar wrappers that may redirect stdout.
+# Implementation borrows nvim's runtime/lua/vim/ui/clipboard/osc52.lua for
+# the ST terminator choice but diverges on the output channel:
+#   - ST terminator (\x1b\\) over BEL (\x07): more compatible across terminal
+#     stacks and SSH paths. BEL fails silently on some setups (verified
+#     empirically against zellij + ssh-into-WSL2; nvim's PR #26688 documents
+#     the same observation).
+#   - /dev/tty first, sys.stderr fallback: nvim writes to stderr because its
+#     callers don't wrap. ccs gets called via fzf's execute-silent which
+#     redirects subprocess stdout/stderr to /dev/null — writing OSC 52 to
+#     stderr there gets silently swallowed and the user never sees the paste.
+#     /dev/tty bypasses any caller redirection by going straight to the
+#     controlling terminal. Stderr fallback covers no-pty contexts (ssh -T,
+#     daemons, isolated subprocess tests).
 #   - No size limit: modern terminals handle 1MB+; if a particular terminal
 #     truncates, the tempfile backstop catches the loss.
 #
@@ -958,10 +965,10 @@ _CLIPBOARD_CMDS: tuple[tuple[list[str], "callable"], ...] = (
 
 
 def _osc52_send(text: str) -> tuple[bool, str]:
-    """Emit OSC 52 to stderr. Returns (sent, note) — `sent` only confirms
-    the bytes left this process. The user must verify by pasting on their
-    local machine. Used as a fallback when no local clipboard tool is
-    reachable (typical SSH session)."""
+    """Emit OSC 52 to the controlling terminal. Returns (sent, note) — `sent`
+    only confirms the bytes left this process. The user must verify by
+    pasting on their local machine. Used as a fallback when no local
+    clipboard tool is reachable (typical SSH session)."""
     payload = base64.b64encode(text.encode("utf-8")).decode("ascii")
     seq = f"\x1b]52;c;{payload}\x1b\\"
     if os.environ.get("TMUX"):
@@ -970,12 +977,22 @@ def _osc52_send(text: str) -> tuple[bool, str]:
         # not set, tmux silently eats the sequence and the tempfile backstop
         # is the user's recovery path.
         seq = "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
+    # Prefer /dev/tty: bypasses fzf's execute-silent and any other caller
+    # that redirects subprocess stdout/stderr. Fall back to stderr only when
+    # there is no controlling tty (ssh -T, daemonized contexts).
+    try:
+        with open("/dev/tty", "w") as tty:
+            tty.write(seq)
+            tty.flush()
+        return (True, "OSC 52 sent via /dev/tty (verify by pasting on local machine)")
+    except OSError:
+        pass
     try:
         sys.stderr.write(seq)
         sys.stderr.flush()
-        return (True, "OSC 52 sent (verify by pasting on your local machine)")
+        return (True, "OSC 52 sent via stderr (verify by pasting on local machine)")
     except OSError as exc:
-        return (False, f"OSC 52 failed: stderr write error ({exc})")
+        return (False, f"OSC 52 failed: cannot reach terminal ({exc})")
 
 
 def _tempfile_save(text: str) -> str | None:
