@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 # ===========================================================================
@@ -1277,6 +1277,79 @@ def _self_invoke(*args: str) -> str:
     return script + " " + " ".join(shlex.quote(a) for a in args)
 
 
+# Banner text lives here (not inside the picker functions) so the hidden
+# --reprint-banner subcommand can regenerate the same string after ?-help
+# returns. fzf's `?:execute(...)` leaves the alternate screen, prints help,
+# then redraws only its inline window on return — the banner region above
+# is fzf's blind spot, so we re-emit it through an `+execute-silent` chain.
+_SESSIONS_BANNER = (
+    "ccs sessions  —  Enter: open  ·  ?: in-app help  ·  Esc: quit  ·  type to filter",
+)
+_MESSAGES_BANNER_TMPL = (
+    "ccs · {tool} session  —  Enter: open  ·  y: copy session  ·  "
+    "Y: copy one  ·  ?: help  ·  Esc: back"
+)
+
+
+def _banner_for(scope: str, *args: str) -> list[str]:
+    if scope == "sessions":
+        return list(_SESSIONS_BANNER)
+    if scope == "messages":
+        tool = args[0] if args else ""
+        return [_MESSAGES_BANNER_TMPL.format(tool=tool)]
+    raise ValueError(f"unknown banner scope: {scope}")
+
+
+def reprint_banner(scope: str, *args: str) -> int:
+    """Force-emit the banner for SCOPE, bypassing print_picker_banner's
+    same-content cache. Bound to `?` chain in fzf so the cheatsheet survives
+    a round-trip through ?-help. Runs in a subprocess invoked by fzf, so the
+    parent's _LAST_BANNER cache is untouched (by design)."""
+    lines = _banner_for(scope, *args)
+    sys.stderr.write("\n")
+    for line in lines:
+        sys.stderr.write(f"  {line}\n")
+    sys.stderr.flush()
+    return 0
+
+
+def upgrade() -> int:
+    """In-place upgrade via `git pull --rebase --tags` in the install dir.
+    Refuses to run if the install dir isn't a git checkout or has uncommitted
+    changes (prevents the conflict-marker scenario seen in v0.3.0 field reports
+    where `git stash pop` left merge markers in ccs.py)."""
+    install_dir = Path(__file__).resolve().parent
+    if not (install_dir / ".git").is_dir():
+        print(
+            f"error: {install_dir} is not a git checkout. "
+            "Re-install manually: clone https://github.com/tmsjngx0/ccs.git "
+            "and re-symlink.",
+            file=sys.stderr,
+        )
+        return 1
+    dirty = subprocess.run(
+        ["git", "-C", str(install_dir), "status", "--porcelain"],
+        capture_output=True, text=True,
+    )
+    if dirty.stdout.strip():
+        print(
+            f"error: {install_dir} has uncommitted changes:\n{dirty.stdout}"
+            "Resolve manually (commit / stash / checkout) before --upgrade.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        subprocess.run(
+            ["git", "-C", str(install_dir), "pull", "--rebase", "--tags"],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"upgrade failed: git pull rc={exc.returncode}", file=sys.stderr)
+        return 1
+    print("upgraded. run 'ccs --version' to verify.")
+    return 0
+
+
 # ===========================================================================
 # Discovery + browse loop
 # ===========================================================================
@@ -1351,10 +1424,9 @@ def browse_sessions(sources: list[str], *, cwd_filter: str | None,
     if skipped:
         status += f"  (unavailable: {', '.join(skipped)})"
     header = status
-    bindings = [f"?:execute({help_cmd})"]
-    sessions_banner = [
-        "ccs sessions  —  Enter: open  ·  ?: in-app help  ·  Esc: quit  ·  type to filter",
-    ]
+    reprint_cmd = _self_invoke("--reprint-banner", "sessions")
+    bindings = [f"?:execute({help_cmd})+execute-silent({reprint_cmd})"]
+    sessions_banner = _banner_for("sessions")
 
     while True:
         # Inside the loop so the banner refreshes when we return here from
@@ -1411,15 +1483,13 @@ def browse_messages(tool: str, locator: str) -> int:
     # execute-silent runs the copy without redrawing the screen; change-header
     # gives non-modal feedback so the user knows it succeeded but stays in the
     # picker with their selection intact.
+    reprint_cmd = _self_invoke("--reprint-banner", "messages", tool)
     bindings = [
         f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — see stderr for path/method)",
         f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — see stderr for path/method)",
-        f"?:execute({help_cmd})",
+        f"?:execute({help_cmd})+execute-silent({reprint_cmd})",
     ]
-    messages_banner = [
-        f"ccs · {tool} session  —  Enter: open  ·  y: copy session  ·  "
-        "Y: copy one  ·  ?: help  ·  Esc: back",
-    ]
+    messages_banner = _banner_for("messages", tool)
 
     while True:
         # Idempotent: same banner across iterations is a no-op, but a real
@@ -1632,6 +1702,8 @@ def parse_args() -> argparse.Namespace:
         description="Multi-source session browser (Claude / Codex / Pi / Opencode).",
     )
     parser.add_argument("--version", action="version", version=f"ccs {__version__}")
+    parser.add_argument("--upgrade", action="store_true",
+                        help="In-place upgrade via git pull in the install directory.")
     parser.add_argument("query", nargs="*", help="Initial fzf filter query (free text).")
     parser.add_argument("--source", action="append", choices=list(ADAPTERS.keys()),
                         help="Restrict to one source. Repeat to combine. Default: all available.")
@@ -1650,6 +1722,9 @@ def parse_args() -> argparse.Namespace:
                         help=argparse.SUPPRESS)
     parser.add_argument("--help-keys", metavar="SCOPE",
                         choices=["sessions", "messages"],
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--reprint-banner", nargs="+",
+                        metavar=("SCOPE", "ARGS"),
                         help=argparse.SUPPRESS)
     return parser.parse_args()
 
@@ -1680,6 +1755,11 @@ def main() -> int:
         return copy_message(tool, locator, idx)
     if args.help_keys:
         return show_help_keys(args.help_keys)
+    if args.reprint_banner:
+        scope, *rest = args.reprint_banner
+        return reprint_banner(scope, *rest)
+    if args.upgrade:
+        return upgrade()
 
     if not shutil_which("fzf"):
         # Fallback mode is functional but limited (no fuzzy match, no preview,

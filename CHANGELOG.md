@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-12
+
+### Added
+
+- `--upgrade` flag runs `git pull --rebase --tags` in the install directory. Refuses to run if the install dir isn't a git checkout or has uncommitted changes — prevents the `git stash pop` conflict-marker scenario seen in v0.3.0 field reports where merge markers ended up inside `ccs.py` and broke the script with a `SyntaxError`
+
+### Fixed
+
+- Shortcut banner above the fzf window no longer disappears after `?`-help round-trip. `?` binding now chains an `execute-silent` that re-emits the banner through the new hidden `--reprint-banner SCOPE [TOOL]` subcommand, bypassing `print_picker_banner`'s same-content cache. Affects both the session picker and the message picker
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
