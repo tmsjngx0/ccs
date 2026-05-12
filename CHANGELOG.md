@@ -6,11 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-12
+
+### Added
+
+- OSC 52 clipboard escape sequence support for SSH sessions — `y` / `Y` now copy through the SSH tunnel via terminal OSC 52, with `/dev/tty` as the primary channel and stderr as fallback (matches neovim's implementation)
+- Tempfile backstop written to `/tmp/ccs-copy-XXXX.md` (mode 0600) when no clipboard utility succeeds — the path is printed so the user can `cat` / `scp` it manually
+- `--version` flag prints the current ccs version (sourced from `__version__` in `ccs.py`)
+
 ### Changed
 
 - README expanded with a "Known limitations" section (preview re-parse cost, Codex prefix-match asymmetry, system-entry visibility) so users don't file them as bugs
 - Adapter section header in `ccs.py` carries an attribution + re-vendoring note documenting the source skill (`recall`) and the no-import rationale
 - `SessionMeta.locator` and `session_line()` carry inline documentation of the opaque-string contract and the hidden-column dispatch pattern
+
+### Fixed
+
+- `pbcopy` / `clip.exe` are skipped when `$SSH_CONNECTION` is set — they would silently copy to the *remote* host's pasteboard instead of the user's actual terminal
+- OSC 52 sequences now use the `ST` terminator (`\e\\`) and have no Base64 size cap, matching neovim's implementation (the earlier `BEL` terminator + cap rejected large payloads silently in some terminals)
+- OSC 52 writes to `/dev/tty` first so the sequence reaches the terminal even when stdout is piped; falls back to stderr if `/dev/tty` is unavailable
 
 ### Removed
 

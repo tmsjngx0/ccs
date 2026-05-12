@@ -32,6 +32,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
+__version__ = "0.3.0"
+
 
 # ===========================================================================
 # Storage roots
@@ -1629,6 +1631,7 @@ def parse_args() -> argparse.Namespace:
         prog="ccs",
         description="Multi-source session browser (Claude / Codex / Pi / Opencode).",
     )
+    parser.add_argument("--version", action="version", version=f"ccs {__version__}")
     parser.add_argument("query", nargs="*", help="Initial fzf filter query (free text).")
     parser.add_argument("--source", action="append", choices=list(ADAPTERS.keys()),
                         help="Restrict to one source. Repeat to combine. Default: all available.")
