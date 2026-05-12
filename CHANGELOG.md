@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-12
+
+### Fixed
+
+- Misleading copy-confirmation message in the message picker. After `y` / `Y` the header read `✓ Copied … — see stderr for path/method`, but `execute-silent` redirects both stdout and stderr to `/dev/null`, so there was no stderr for the user to consult. The message taught a lie. Replaced with `✓ Copied … — paste to verify` — actionable and honest. To inspect the actual fallback path/method (which clipboard tool succeeded, whether OSC 52 was sent, where the tempfile backstop landed), invoke `ccs --copy-session <tool> <locator>` directly from a regular shell where stderr is visible
+
 ## [0.4.3] - 2026-05-12
 
 ### Fixed

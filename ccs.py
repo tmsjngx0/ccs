@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 
 # ===========================================================================
@@ -1501,8 +1501,8 @@ def browse_messages(tool: str, locator: str) -> int:
     # gives non-modal feedback so the user knows it succeeded but stays in the
     # picker with their selection intact.
     bindings = [
-        f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — see stderr for path/method)",
-        f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — see stderr for path/method)",
+        f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — paste to verify)",
+        f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — paste to verify)",
         f"?:execute({help_cmd})",
     ]
     messages_banner = _banner_for("messages", tool)
