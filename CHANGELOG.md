@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-12
+
+### Fixed
+
+- `?`-help binding was broken: pressing `?` in either picker showed nothing instead of opening the help screen. Root cause: the v0.3.1 banner-reprint chain (`?:execute(help_cmd)+execute-silent(reprint_cmd)`) was added on a faulty premise — it assumed fzf uses an alternate screen, but ccs runs fzf in inline mode (`--height=80%`), where the banner above fzf's window naturally survives `?`-help round-trips because fzf only redraws its own inline region. The reprint chain raced with fzf's redraw and corrupted the help display. Reverted the chain — bindings are now just `?:execute(help_cmd)`. The banner stays visible without help. The hidden `--reprint-banner` subcommand is retained (no harm) in case a future binding pattern needs it
+
 ## [0.4.2] - 2026-05-12
 
 ### Changed

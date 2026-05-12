@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 
 # ===========================================================================
@@ -1442,8 +1442,7 @@ def browse_sessions(sources: list[str], *, cwd_filter: str | None,
     if skipped:
         status += f"  (unavailable: {', '.join(skipped)})"
     header = status
-    reprint_cmd = _self_invoke("--reprint-banner", "sessions")
-    bindings = [f"?:execute({help_cmd})+execute-silent({reprint_cmd})"]
+    bindings = [f"?:execute({help_cmd})"]
     sessions_banner = _banner_for("sessions")
 
     while True:
@@ -1501,11 +1500,10 @@ def browse_messages(tool: str, locator: str) -> int:
     # execute-silent runs the copy without redrawing the screen; change-header
     # gives non-modal feedback so the user knows it succeeded but stays in the
     # picker with their selection intact.
-    reprint_cmd = _self_invoke("--reprint-banner", "messages", tool)
     bindings = [
         f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — see stderr for path/method)",
         f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — see stderr for path/method)",
-        f"?:execute({help_cmd})+execute-silent({reprint_cmd})",
+        f"?:execute({help_cmd})",
     ]
     messages_banner = _banner_for("messages", tool)
 
