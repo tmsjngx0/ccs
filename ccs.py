@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 
 # ===========================================================================
@@ -1043,7 +1043,7 @@ def clipboard_copy(text: str) -> bool:
         if not shutil_which(cmd[0]):
             continue
         try:
-            subprocess.run(cmd, input=text, text=True, check=True)
+            subprocess.run(cmd, input=text, text=True, encoding="utf-8", check=True)
             notes.append(f"clipboard: {cmd[0]} → ok")
             primary_ok = True
             break
@@ -1161,6 +1161,7 @@ def run_fzf(lines: list[str], *, header: str, preview: str, with_nth: str,
         cmd,
         input="\n".join(lines),
         text=True,
+        encoding="utf-8",
         stdout=subprocess.PIPE,
     )
     if result.returncode in (1, 130):
@@ -1329,7 +1330,7 @@ def upgrade() -> int:
         return 1
     dirty = subprocess.run(
         ["git", "-C", str(install_dir), "status", "--porcelain"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8",
     )
     if dirty.stdout.strip():
         print(
@@ -1610,7 +1611,7 @@ def show_help_keys(scope: str) -> int:
     pager = os.environ.get("PAGER") or ("less" if shutil_which("less") else None)
     if pager:
         try:
-            subprocess.run([pager, "-R"], input=text, text=True, check=False)
+            subprocess.run([pager, "-R"], input=text, text=True, encoding="utf-8", check=False)
             return 0
         except FileNotFoundError:
             pass

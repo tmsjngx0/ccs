@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-12
+
+### Added
+
+- `pyproject.toml` (hatchling, single-module pattern) — enables `pipx install git+...`, `uvx --from git+... ccs`, and `uv tool install git+...`. `ccs.py` stays as a single file at the repo root; the wheel build packs it as the top-level `ccs` module so import paths work after install. Rationale: ADR-009 in `ccs-mgmt`. `__version__` in `ccs.py` is the single source of truth — hatchling reads it dynamically
+- `For AI agents` section in README — prerequisite-check commands (bash + PowerShell), idempotent install instructions, and a table of agent-friendly invocations (`--version`, `--all --source claude`, `--copy-session`, `--upgrade`). Cross-references ADR-008 (capacity-driven self-service)
+- One-line OS prerequisite install matrix in Requirements — `apt` / `pacman` / `dnf` / `brew` / `winget` commands covering `git`, `python3`, `fzf` together. The `winget install Git.Git Python.Python.3.12 junegunn.fzf` line is the most important new piece — Windows native is now a one-command bootstrap
+
+### Changed
+
+- **Native Windows platform support raised from Partial to Supported.** `winget` covers all prereqs end-to-end; the UnicodeEncodeError fix below removes the last blocker for Korean / emoji session titles. Caveat retained: Claude Code's project-directory encoding on non-POSIX paths is unverified — `--all` works as the bypass
+
+### Fixed
+
+- `UnicodeEncodeError` on Windows when piping fzf's stdin and other text-mode subprocess calls containing non-ASCII content (Korean session titles, emoji, OSC 52 base64). Python's `subprocess.run` defaulted to the legacy ANSI code page (`cp1252` on US Windows); `text=True` is now paired with explicit `encoding="utf-8"` at four call sites: fzf launcher, clipboard tool dispatch, in-app `?`-help pager, and `git status --porcelain` parse inside `--upgrade`
+
 ## [0.3.1] - 2026-05-12
 
 ### Added

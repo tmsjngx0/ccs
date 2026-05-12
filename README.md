@@ -16,18 +16,53 @@ ccs --session opencode://ses_2786e7db…           # open an Opencode session by
 
 ## Install
 
-```bash
-# Clone
-git clone https://github.com/tmsjngx0/ccs.git ~/.local/share/ccs
+Three options — pick whichever fits your habits:
 
-# Add to PATH (or symlink)
+```bash
+# Option 1 — git clone (no Python packaging needed; self-upgradeable via `ccs --upgrade`)
+git clone https://github.com/tmsjngx0/ccs.git ~/.local/share/ccs
 ln -s ~/.local/share/ccs/ccs.py ~/.local/bin/ccs
 
-# Or alias (zsh / bash)
-echo 'alias ccs="~/.local/share/ccs/ccs.py"' >> ~/.zshrc
+# Option 2 — pipx (isolated install, standard Python tool)
+pipx install git+https://github.com/tmsjngx0/ccs.git
+
+# Option 3 — uvx (uv's one-shot runner — try without installing)
+uvx --from git+https://github.com/tmsjngx0/ccs.git ccs --version
+# permanent install with uv:
+uv tool install git+https://github.com/tmsjngx0/ccs.git
 ```
 
-That's it. No `pip install`, no virtualenv, no extra packages. `python3` and one optional binary (fzf) are all you need.
+`npx` does not work — `ccs` is a Python single-file tool, not a Node package. `pipx run` and `uvx` are the Python equivalents for one-shot execution.
+
+`python3` (≥3.9) and an optional `fzf` are all you need at runtime. No `pip install` of dependencies is required for Option 1 (stdlib only).
+
+## For AI agents
+
+`ccs` is built so an AI agent (Claude Code, Codex, etc.) can install and operate it on the user's machine without human intervention. The install commands above are **idempotent and non-interactive** — safe to re-run.
+
+**Prerequisite check** (run before install):
+
+```bash
+# Linux / macOS / WSL
+for t in git python3; do command -v "$t" >/dev/null 2>&1 || echo "missing: $t"; done
+
+# Windows (PowerShell)
+foreach ($t in 'git','python','fzf') { if (-not (Get-Command $t -ErrorAction SilentlyContinue)) { Write-Output "missing: $t" } }
+```
+
+If anything is missing, install it via the OS package manager (see [Requirements](#requirements) below). `fzf` is optional — without it, `ccs` falls back to a stdlib numbered picker.
+
+**Agent-friendly commands**:
+
+| Command | Purpose |
+|---|---|
+| `ccs --version` | Verify install / pre-flight check |
+| `ccs --all --source claude` | All Claude sessions across all cwds (one row per line; tab-delimited) |
+| `ccs --session <jsonl_path>` | Open a specific session by path |
+| `ccs --copy-session claude <jsonl>` | Copy session content (clipboard → OSC52 → tempfile fallback chain) |
+| `ccs --upgrade` | In-place upgrade via `git pull` (refuses if uncommitted changes; agent should `git -C <install_dir> status` first) |
+
+Rationale for the agent-first design lives in [ADR-008 (Solo-maintainer capacity drives self-service feature priority)](https://github.com/tmsjngx0/ccs-mgmt/blob/main/docs/decisions/ADR-008-solo-maintainer-capacity-drives-self-service.md) in the `ccs-mgmt` harness.
 
 ## Requirements
 
@@ -35,10 +70,21 @@ Realistically you install **zero or one thing** — `fzf` (optional, recommended
 
 | | Tool | Notes |
 |---|---|---|
-| Required | `python3` (≥3.9) | Stdlib only — no `pip install`. `sqlite3` is bundled. |
-| Recommended | [`fzf`](https://github.com/junegunn/fzf) | Fuzzy filter + live preview + key bindings. `brew install fzf` · `scoop install fzf` · `apt install fzf`. **Without it, ccs runs in a stdlib fallback picker** (numbered list, `/text` substring filter, `q` quit). |
+| Required | `python3` (≥3.9) | Stdlib only — no `pip install` for Option 1. `sqlite3` is bundled. |
+| Required (Option 1) | `git` | Any version; used by Option 1 and by `ccs --upgrade`. |
+| Recommended | [`fzf`](https://github.com/junegunn/fzf) | Fuzzy filter + live preview + key bindings. **Without it, ccs runs in a stdlib fallback picker** (numbered list, `/text` substring filter, `q` quit). |
 | Pager (optional, one of) | `bat` → `$PAGER` → `less` | First one found wins. Plain `less` is fine. |
-| Clipboard (optional, one of) | `pbcopy` · `wl-copy` · `xclip` · `xsel` · `clip.exe` | macOS / Wayland / X11 / X11 / WSL+Windows. Your OS already ships one. |
+| Clipboard (optional, one of) | `pbcopy` · `wl-copy` · `xclip` · `xsel` · `clip.exe` | macOS / Wayland / X11 / X11 / WSL+Windows. Your OS already ships one. OSC 52 + tempfile fallback covers SSH sessions. |
+
+**One-line prereq install** (covers `git`, `python3`, `fzf` together):
+
+| OS | Command |
+|---|---|
+| Linux (Debian/Ubuntu) | `sudo apt install git python3 fzf` |
+| Linux (Arch) | `sudo pacman -S git python fzf` |
+| Linux (Fedora) | `sudo dnf install git python3 fzf` |
+| macOS | `brew install git python fzf` |
+| Windows | `winget install Git.Git Python.Python.3.12 junegunn.fzf` |
 
 ## Platform support
 
@@ -47,7 +93,7 @@ Realistically you install **zero or one thing** — `fzf` (optional, recommended
 | macOS | ✅ |
 | Linux (X11 / Wayland) | ✅ |
 | WSL2 on Windows | ✅ |
-| Native Windows | ⚠️ Partial — `clip.exe`/`fzf.exe` work, but Claude Code's project-directory encoding hasn't been verified on non-POSIX paths. Use `--all` to bypass cwd filtering. |
+| Native Windows | ✅ Supported (v0.4.0+) — `winget` covers all prereqs (see [Requirements](#requirements)). UTF-8 forced on fzf stdin so Korean / emoji session titles render correctly. Caveat: Claude Code's project-directory encoding on non-POSIX paths is unverified — use `--all` to bypass cwd filtering if `--here` returns empty. |
 
 ## Keybindings
 
