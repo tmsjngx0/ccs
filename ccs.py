@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 
 # ===========================================================================
@@ -1315,10 +1315,12 @@ def reprint_banner(scope: str, *args: str) -> int:
 
 
 def upgrade() -> int:
-    """In-place upgrade via `git pull --rebase --tags` in the install dir.
-    Refuses to run if the install dir isn't a git checkout or has uncommitted
-    changes (prevents the conflict-marker scenario seen in v0.3.0 field reports
-    where `git stash pop` left merge markers in ccs.py)."""
+    """In-place upgrade. Works for standalone clones, submodules, and worktrees
+    by always going through `git fetch origin main --tags` + `git reset --hard
+    origin/main`. `pull --rebase` doesn't work in submodule/worktree contexts
+    where HEAD is detached. Refuses if the install dir isn't a git checkout or
+    has uncommitted changes (prevents the conflict-marker scenario seen in
+    v0.3.0 field reports where `git stash pop` left merge markers in ccs.py)."""
     install_dir = Path(__file__).resolve().parent
     git_marker = install_dir / ".git"
     if not git_marker.exists():
@@ -1329,23 +1331,7 @@ def upgrade() -> int:
             file=sys.stderr,
         )
         return 1
-    if git_marker.is_file():
-        # `.git` as a file (gitlink) means this is a submodule or a worktree,
-        # not a standalone clone. `git pull` in a submodule typically fails
-        # ("not currently on a branch" — detached HEAD), and even if it
-        # succeeded it would desync the parent repo's submodule pointer.
-        # Refuse with a clear next step instead of letting git fail downstream.
-        print(
-            f"error: {install_dir} is a git submodule (or worktree), not a "
-            "standalone clone. --upgrade is for standalone installs.\n"
-            "  In a submodule: run `git submodule update --remote` from the "
-            "parent repo, then commit the bumped submodule pointer.\n"
-            "  For a standalone install: clone "
-            "https://github.com/tmsjngx0/ccs.git into a separate directory "
-            "(e.g. ~/.local/share/ccs) and symlink it onto your PATH.",
-            file=sys.stderr,
-        )
-        return 1
+    is_submodule_or_worktree = git_marker.is_file()
     dirty = subprocess.run(
         ["git", "-C", str(install_dir), "status", "--porcelain"],
         capture_output=True, text=True, encoding="utf-8",
@@ -1359,13 +1345,26 @@ def upgrade() -> int:
         return 1
     try:
         subprocess.run(
-            ["git", "-C", str(install_dir), "pull", "--rebase", "--tags"],
+            ["git", "-C", str(install_dir), "fetch", "origin", "main", "--tags"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(install_dir), "reset", "--hard", "origin/main"],
             check=True,
         )
     except subprocess.CalledProcessError as exc:
-        print(f"upgrade failed: git pull rc={exc.returncode}", file=sys.stderr)
+        print(f"upgrade failed: git rc={exc.returncode}", file=sys.stderr)
         return 1
-    print("upgraded. run 'ccs --version' to verify.")
+    msg = "upgraded. run 'ccs --version' to verify."
+    if is_submodule_or_worktree:
+        msg += (
+            f"\nNote: {install_dir} is a submodule/worktree — its HEAD now "
+            "points at origin/main, which likely differs from the parent "
+            "repo's pinned submodule pointer. To realign the parent: "
+            f"`cd <parent>; git add {install_dir.name}; "
+            "git commit -m 'bump ccs submodule'`."
+        )
+    print(msg)
     return 0
 
 

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-12
+
+### Changed
+
+- `--upgrade` now actually upgrades from a git submodule / worktree, instead of refusing with a "wrong checkout type" prescription (the v0.4.1 behavior). Implementation switches from `git pull --rebase --tags` to `git fetch origin main --tags` + `git reset --hard origin/main`, which works identically across standalone clones and detached-HEAD submodules/worktrees. The dirty-tree guard is preserved (uncommitted changes still refuse). When the install dir is a submodule, the success message now points at the follow-up step the user owns: bumping the parent repo's submodule pointer. Reasoning: ADR-008's "prescription, not diagnosis" principle applies to actions too — when the action is unambiguous and the user has typed `--upgrade`, do the work
+
 ## [0.4.1] - 2026-05-12
 
 ### Fixed
