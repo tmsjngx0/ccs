@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 # ===========================================================================
@@ -1320,11 +1320,29 @@ def upgrade() -> int:
     changes (prevents the conflict-marker scenario seen in v0.3.0 field reports
     where `git stash pop` left merge markers in ccs.py)."""
     install_dir = Path(__file__).resolve().parent
-    if not (install_dir / ".git").is_dir():
+    git_marker = install_dir / ".git"
+    if not git_marker.exists():
         print(
             f"error: {install_dir} is not a git checkout. "
             "Re-install manually: clone https://github.com/tmsjngx0/ccs.git "
             "and re-symlink.",
+            file=sys.stderr,
+        )
+        return 1
+    if git_marker.is_file():
+        # `.git` as a file (gitlink) means this is a submodule or a worktree,
+        # not a standalone clone. `git pull` in a submodule typically fails
+        # ("not currently on a branch" — detached HEAD), and even if it
+        # succeeded it would desync the parent repo's submodule pointer.
+        # Refuse with a clear next step instead of letting git fail downstream.
+        print(
+            f"error: {install_dir} is a git submodule (or worktree), not a "
+            "standalone clone. --upgrade is for standalone installs.\n"
+            "  In a submodule: run `git submodule update --remote` from the "
+            "parent repo, then commit the bumped submodule pointer.\n"
+            "  For a standalone install: clone "
+            "https://github.com/tmsjngx0/ccs.git into a separate directory "
+            "(e.g. ~/.local/share/ccs) and symlink it onto your PATH.",
             file=sys.stderr,
         )
         return 1

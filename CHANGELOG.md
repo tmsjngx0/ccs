@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-12
+
+### Fixed
+
+- `--upgrade` falsely refused with "is not a git checkout" when `ccs.py` lives inside a git submodule or worktree (where `.git` is a file pointer, not a directory). Detection now uses `Path.exists()` plus a `Path.is_file()` branch that prints a submodule-specific prescription: run `git submodule update --remote` from the parent repo and commit the bumped pointer, instead of letting `git pull` fail downstream with a confusing "not currently on a branch" error
+
 ## [0.4.0] - 2026-05-12
 
 ### Added
