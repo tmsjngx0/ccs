@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 
 # ===========================================================================

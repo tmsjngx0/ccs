@@ -72,7 +72,7 @@ Realistically you install **zero or one thing** — `fzf` (optional, recommended
 |---|---|---|
 | Required | `python3` (≥3.9) | Stdlib only — no `pip install` for Option 1. `sqlite3` is bundled. |
 | Required (Option 1) | `git` | Any version; used by Option 1 and by `ccs --upgrade`. |
-| Recommended | [`fzf`](https://github.com/junegunn/fzf) | Fuzzy filter + live preview + key bindings. **Without it, ccs runs in a stdlib fallback picker** (numbered list, `/text` substring filter, `q` quit). |
+| Recommended | [`fzf`](https://github.com/junegunn/fzf) **≥ 0.50** | Fuzzy filter + live preview + key bindings. **Without it, ccs runs in a stdlib fallback picker** (numbered list, `/text` substring filter, `q` quit). **Debian / Ubuntu `apt` ships an outdated 0.44.x where ccs's `ctrl-y` / `alt-y` / `?` bindings silently no-op — install the latest binary directly:** `curl -L https://github.com/junegunn/fzf/releases/latest/download/fzf-linux_amd64.tar.gz \| tar xz -C ~/.local/bin/` or use `git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf && ~/.fzf/install --bin`. |
 | Pager (optional, one of) | `bat` → `$PAGER` → `less` | First one found wins. Plain `less` is fine. |
 | Clipboard (optional, one of) | `pbcopy` · `wl-copy` · `xclip` · `xsel` · `clip.exe` | macOS / Wayland / X11 / X11 / WSL+Windows. Your OS already ships one. OSC 52 + tempfile fallback covers SSH sessions. |
 

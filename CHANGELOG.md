@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-13
+
+### Fixed (documentation)
+
+- README now states **fzf ≥ 0.50 is required** for the `ctrl-y` / `alt-y` / `?` bindings to fire. Older fzf (notably `0.44.x` shipped by Debian / Ubuntu `apt`) silently accepts the binding strings but no-ops at runtime — yank shows the change-header confirmation but doesn't actually copy, and `?` doesn't open the help pager. Field-reported during v0.5.0 dogfood (astra on `fzf 0.44.1 (debian)` was broken; stella on `fzf 0.68.0 (Homebrew)` worked end-to-end). Install instructions added: direct binary download or `~/.fzf/install --bin`, both bypass the stale apt package
+- No code change — pure docs / version bump to surface the constraint at install time
+
 ## [0.5.0] - 2026-05-13
 
 ### Changed (breaking)
