@@ -12,7 +12,7 @@ ccs --session ~/.claude/projects/.../foo.jsonl   # open a JSONL file directly
 ccs --session opencode://ses_2786e7db…           # open an Opencode session by id
 ```
 
-**Quick keys (fzf):** `Enter` open · `y` copy session · `Y` copy one msg · `?` in-app help · `Esc` back
+**Quick keys (fzf):** `Enter` open · `ctrl-y` yank conversation · `alt-y` yank one message · `?` in-app help · `Esc` back
 
 ## Install
 
@@ -110,10 +110,12 @@ Message picker (after picking a session):
 | Key | Action |
 |-----|--------|
 | `Enter` | Render the message in `bat` |
-| `y` | Copy the **whole conversation** (all messages, joined) to clipboard |
-| `Y` | Copy **only the highlighted message** to clipboard |
+| `ctrl-y` | Copy the **whole conversation** (all messages, joined) to clipboard |
+| `alt-y` | Copy **only the highlighted message** to clipboard |
 | `?` | Show the keybinding help screen |
 | `Esc` | Back to session picker |
+
+Modifier-prefixed (`ctrl-y` / `alt-y`) instead of plain letters because fzf treats every unbound letter as input to its type-to-search query — a binding on plain `y` / `Y` would block searching for words containing those letters (e.g. "**y**esterday" in a message).
 
 Clipboard fallback chain: `pbcopy` → `wl-copy` → `xclip` → `xsel` → `clip.exe`.
 

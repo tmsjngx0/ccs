@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-13
+
+### Changed (breaking)
+
+- **Yank keybindings remapped: `y` → `ctrl-y`, `Y` → `alt-y`.** fzf treats every unbound letter as input to its type-to-search query, so a binding on plain `y` / `Y` blocked searching for words containing those letters (e.g. "**y**esterday" in a message). Modifier-prefixed bindings keep search free. `?` remains as the help key (universal CLI convention; `?` is rarely needed in search). Users who scripted `--copy-session` / `--copy-message` directly are unaffected — only the fzf bindings changed
+- README's Quick keys line, the Message picker keybinding table, the in-app `?`-help text, and the messages-picker banner all updated to reflect the new bindings
+
+### Fixed
+
+- In-app `?`-help could appear invisible when invoked from the message picker — fzf's inline mode (`--height=80%`) hosts the pager output in the same screen region fzf redraws, and a user `$LESS` env containing `-F` (quit on short) or `-X` (no alternate screen, common in oh-my-zsh / prezto defaults) made `less` either flash invisibly or sit underneath fzf's redraw. `show_help_keys` now overrides `$LESS` to `-R` (raw control chars only) when invoking the pager, so the help text consistently uses the alternate screen and waits for `q`
+
 ## [0.4.5] - 2026-05-12
 
 ### Fixed

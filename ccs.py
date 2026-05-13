@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.5"
+__version__ = "0.5.0"
 
 
 # ===========================================================================
@@ -1289,8 +1289,8 @@ _SESSIONS_BANNER = (
     "ccs sessions  —  Enter: open  ·  ?: in-app help  ·  Esc: quit  ·  type to filter",
 )
 _MESSAGES_BANNER_TMPL = (
-    "ccs · {tool} session  —  Enter: open  ·  y: copy session  ·  "
-    "Y: copy one  ·  ?: help  ·  Esc: back"
+    "ccs · {tool} session  —  Enter: open  ·  ctrl-y: yank conv  ·  "
+    "alt-y: yank one  ·  ?: help  ·  Esc: back"
 )
 
 
@@ -1503,8 +1503,8 @@ def browse_messages(tool: str, locator: str) -> int:
     # gives non-modal feedback so the user knows it succeeded but stays in the
     # picker with their selection intact.
     bindings = [
-        f"y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — paste to verify)",
-        f"Y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — paste to verify)",
+        f"ctrl-y:execute-silent({copy_session_cmd})+change-header(✓ Copied conversation — paste to verify)",
+        f"alt-y:execute-silent({copy_message_cmd})+change-header(✓ Copied message — paste to verify)",
         f"?:execute({help_cmd})",
     ]
     messages_banner = _banner_for("messages", tool)
@@ -1586,8 +1586,12 @@ Navigation
 
 Clipboard
 ---------
-  y          Copy the WHOLE conversation (all messages, joined)
-  Y          Copy ONLY the currently highlighted message
+  ctrl-y     Copy the WHOLE conversation (all messages, joined)
+  alt-y      Copy ONLY the currently highlighted message
+
+  Letter bindings (y / Y) would conflict with fzf's type-to-search —
+  a substring containing 'y' (e.g. "yesterday") would be intercepted
+  as a yank action. Modifier-prefixed bindings keep search free.
 
   Copy chain (each path tried in order, first success wins):
     1. Local clipboard tools (pbcopy / wl-copy / xclip / xsel / clip.exe).
@@ -1627,8 +1631,14 @@ def show_help_keys(scope: str) -> int:
         return 1
     pager = os.environ.get("PAGER") or ("less" if shutil_which("less") else None)
     if pager:
+        # Override $LESS so the user's shell rc (oh-my-zsh, prezto, etc.)
+        # can't force quit-on-short (`-F`) or no-alt-screen (`-X`) — both
+        # cause this help text (short + invoked inside fzf's inline window)
+        # to flash invisibly and only appear after fzf exits.
+        env = os.environ.copy()
+        env["LESS"] = "-R"
         try:
-            subprocess.run([pager, "-R"], input=text, text=True, encoding="utf-8", check=False)
+            subprocess.run([pager], input=text, text=True, encoding="utf-8", env=env, check=False)
             return 0
         except FileNotFoundError:
             pass
