@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-05-12
+
+### Fixed
+
+- Banner stacked above the fzf window as the user moved between the session picker and the message picker. fzf's inline mode (`--height=80%`) only redraws its own bottom-80% region; the banner zone above belongs to `ccs`, and every `print_picker_banner` call wrote a fresh line at the current stderr cursor position instead of replacing the previous banner. Now `print_picker_banner` emits `\x1b[H\x1b[2J` (cursor home + clear entire screen) before writing — fzf redraws its inline region cleanly below on the next launch, and the banner zone shows only the current picker's cheatsheet
+
 ## [0.4.4] - 2026-05-12
 
 ### Fixed

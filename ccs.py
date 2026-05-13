@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 
 # ===========================================================================
@@ -1096,21 +1096,23 @@ _LAST_BANNER: list[str] | None = None
 
 
 def print_picker_banner(lines: list[str]) -> None:
-    """Print the shortcut cheatsheet above fzf's inline window — but only
-    when it actually changed.
+    """Print the shortcut cheatsheet above fzf's inline window.
 
-    Idempotent on repeated calls with the same content. Why this matters:
-    every fzf re-launch (browse_messages → bat → return) used to print
-    the banner again, stacking duplicates downward. With caching, calling
-    this from inside the picker's while-loop is safe — the banner only
-    re-renders when the picker context changes (e.g., session ↔ message
-    transition), so the user always sees the right cheatsheet above the
-    current fzf window without duplicates accumulating."""
+    Each picker transition (sessions ↔ messages) emits a different banner,
+    so we reset the terminal to the top and clear before writing — otherwise
+    fzf's inline mode (`--height=80%`) leaves previous banners stacked above
+    the new fzf region as the user moves between pickers. fzf only redraws
+    its own inline area; the banner zone above is ours to manage.
+
+    The cache short-circuit on identical content survives same-picker
+    re-launches (e.g., message picker → bat → message picker)."""
     global _LAST_BANNER
     if _LAST_BANNER == lines:
         return
     _LAST_BANNER = list(lines)
-    sys.stderr.write("\n")
+    # Cursor home + clear entire screen, then write banner at the top.
+    # fzf's next launch redraws its own inline region cleanly below.
+    sys.stderr.write("\x1b[H\x1b[2J")
     for line in lines:
         sys.stderr.write(f"  {line}\n")
     sys.stderr.flush()
